@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>الهيج | اجري تعيش</title>
+<meta name="theme-color" content="#0b0f0a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg: #0b0f0a;
+    --bg2: #10160f;
+    --blood: #b7332e;
+    --blood-dim: #7a2422;
+    --moss: #7c8f4f;
+    --moss-dim: #4d5b30;
+    --bone: #e8e4d8;
+    --bone-dim: #9a9788;
+    --amber: #d9a441;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body {
+    margin:0; padding:0; width:100%; height:100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    color: var(--bone);
+    touch-action: none;
+  }
+  #app { position: relative; width: 100vw; height: 100vh; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  #hud {
+    position: absolute; top:0; left:0; right:0;
+    padding: max(14px, env(safe-area-inset-top)) 14px 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0,0,0,.55), transparent);
+  }
+  .row { display:flex; align-items:center; gap:10px; }
+  .stat { font-size: 13px; color: var(--bone-dim); }
+  .stat b { color: var(--bone); font-size: 14px; }
+  .bar-wrap { flex:1; height: 10px; background: rgba(255,255,255,.08); border-radius: 6px; overflow:hidden; border:1px solid rgba(255,255,255,.12); }
+  .bar-fill { height:100%; border-radius:6px; transition: width .25s ease; }
+  .bar-fill.energy { background: linear-gradient(90deg, var(--amber), #f2c14e); }
+  .bar-fill.speed { background: linear-gradient(90deg, var(--moss-dim), var(--moss)); }
+  .label { font-size: 11px; color: var(--bone-dim); min-width: 46px; }
+
+  #ammoPill {
+    position:absolute; left:14px; bottom: calc(14px + env(safe-area-inset-bottom));
+    background: rgba(15,15,12,.75); border:1px solid var(--blood-dim);
+    padding: 8px 14px; border-radius: 999px; font-size: 15px; font-weight:700;
+    display:flex; align-items:center; gap:8px; pointer-events:none;
+  }
+  #pushBtn {
+    position:absolute; right:14px; bottom: calc(14px + env(safe-area-inset-bottom));
+    background: var(--amber); color:#241a04; border:none; border-radius: 999px;
+    padding: 12px 20px; font-weight:800; font-size:15px;
+    box-shadow: 0 4px 18px rgba(217,164,65,.4);
+    opacity:.35; pointer-events:none; transition: opacity .2s;
+  }
+  #pushBtn.ready { opacity:1; pointer-events:auto; }
+
+  .screen {
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    background: radial-gradient(circle at 50% 30%, var(--bg2), var(--bg) 75%);
+    padding: 24px; gap: 14px; z-index: 10;
+  }
+  .screen h1 {
+    font-size: 30px; margin: 0; color: var(--blood);
+    letter-spacing: 1px; text-shadow: 0 0 20px rgba(183,51,46,.5);
+  }
+  .screen p { color: var(--bone-dim); font-size: 14px; line-height:1.7; max-width: 320px; margin:0; }
+  .screen .stepline { display:flex; align-items:center; gap:10px; max-width:320px; text-align:right; }
+  .screen .stepline .dot { width:8px; height:8px; border-radius:50%; background:var(--moss); flex-shrink:0; }
+  .bigbtn {
+    background: var(--blood); color: var(--bone); border:none; border-radius: 14px;
+    padding: 16px 40px; font-size:17px; font-weight:800; margin-top: 8px;
+    box-shadow: 0 6px 24px rgba(183,51,46,.4);
+  }
+  .bigbtn:active { transform: scale(.97); }
+  .ghost { background: transparent; color: var(--bone-dim); border: 1px solid rgba(255,255,255,.15); border-radius: 12px; padding: 10px 24px; font-size:14px; }
+  #countdown {
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    font-size: 90px; font-weight:900; color: var(--amber); z-index: 20;
+    text-shadow: 0 0 30px rgba(217,164,65,.6);
+    background: rgba(0,0,0,.35);
+  }
+  .statsGrid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin: 10px 0; }
+  .statsGrid div { font-size: 13px; color: var(--bone-dim); }
+  .statsGrid b { display:block; font-size: 20px; color: var(--bone); }
+  #err { color: var(--blood); font-size:13px; max-width:300px; }
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="hud" hidden>
+    <div class="row">
+      <span class="label">الطاقة</span>
+      <div class="bar-wrap"><div id="energyBar" class="bar-fill energy" style="width:0%"></div></div>
+    </div>
+    <div class="row">
+      <span class="label">سرعة الهيج</span>
+      <div class="bar-wrap"><div id="speedBar" class="bar-fill speed" style="width:60%"></div></div>
+    </div>
+    <div class="row">
+      <span class="stat">المسافة: <b id="distStat">0</b> م</span>
+      <span class="stat">الوقت: <b id="timeStat">0:00</b></span>
+      <span class="stat">قتلت: <b id="killStat">0</b></span>
+    </div>
+  </div>
+
+  <div id="ammoPill" hidden>💀 <span id="ammoCount">0</span></div>
+  <button id="pushBtn">ادفعهم للخلف 🔥</button>
+
+  <div id="countdown"></div>
+
+  <div id="startScreen" class="screen">
+    <h1>الهيج قادم</h1>
+    <p>خريطتك الحقيقية بتتحول لساحة نجاة. زومبي يطلع من نقطة انطلاقك ويلحقك — والهروب الوحيد إنك تجري فعلاً.</p>
+    <div class="stepline"><span class="dot"></span><span>عندك 60 ثانية هدوء قبل ما الهيج يطلع</span></div>
+    <div class="stepline"><span class="dot"></span><span>اضغط الجماجم الحمرا عشان ترمي عليهم</span></div>
+    <div class="stepline"><span class="dot"></span><span>صناديق الذخيرة وساعات الرمل تطلع على مسارك</span></div>
+    <div class="stepline"><span class="dot"></span><span>اجري يمتلي شريط الطاقة ويدفع الهيج لورا</span></div>
+    <button class="bigbtn" id="startBtn">ابدأ الجري</button>
+    <p id="err" hidden></p>
+  </div>
+
+  <div id="gameOverScreen" class="screen" hidden>
+    <h1 id="overTitle">لحقوك</h1>
+    <div class="statsGrid">
+      <div>نجوت لـ <b id="finalTime">0:00</b></div>
+      <div>جريت <b id="finalDist">0</b> م</div>
+      <div>قتلت <b id="finalKills">0</b></div>
+      <div>أفضل مسافة <b id="bestDist">0</b> م</div>
+    </div>
+    <button class="bigbtn" id="retryBtn">اجري ثانية</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    W = canvas.width = innerWidth * DPR;
+    H = canvas.height = innerHeight * DPR;
+    canvas.style.width = innerWidth+'px';
+    canvas.style.height = innerHeight+'px';
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---------- geo helpers ----------
+  const R = 6371000;
+  function toMeters(lat, lon, lat0, lon0){
+    const x = (lon-lon0) * Math.PI/180 * R * Math.cos(lat0*Math.PI/180);
+    const y = (lat-lat0) * Math.PI/180 * R;
+    return {x, y: -y}; // screen y grows downward, north is up -> flip
+  }
+
+  // ---------- state ----------
+  const S = {
+    running:false,
+    lat0:null, lon0:null,
+    px:0, py:0,            // player position, meters, local frame
+    heading:0,
+    path:[],                // {x,y,t}
+    distance:0,
+    startTime:0,
+    lastMoveTime:0,
+    zombies:[],
+    pickups:[],
+    ammo:3,
+    kills:0,
+    energy:0,
+    energyReady:false,
+    zombieSpeed:1.35,       // m/s baseline (brisk walk)
+    zombieSlowUntil:0,
+    spawned:false,
+    grace:60,
+    lastSpawnDistMark:0,
+    watchId:null,
+    camScale: 9 * (window.devicePixelRatio? Math.min(devicePixelRatio,2):1), // px per meter baseline, adjusted below
+    best: parseFloat(localStorage.getItem('zr_best')||'0')
+  };
+  // recompute a display-space scale independent of DPR trick above
+  S.camScale = 9;
+
+  function pxPerMeter(){ return S.camScale * DPR; }
+
+  // ---------- UI refs ----------
+  const hud = document.getElementById('hud');
+  const startScreen = document.getElementById('startScreen');
+  const overScreen = document.getElementById('gameOverScreen');
+  const errEl = document.getElementById('err');
+  const countdownEl = document.getElementById('countdown');
+  const ammoPill = document.getElementById('ammoPill');
+  const ammoCount = document.getElementById('ammoCount');
+  const pushBtn = document.getElementById('pushBtn');
+  const energyBar = document.getElementById('energyBar');
+  const speedBar = document.getElementById('speedBar');
+  const distStat = document.getElementById('distStat');
+  const timeStat = document.getElementById('timeStat');
+  const killStat = document.getElementById('killStat');
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('retryBtn').addEventListener('click', () => location.reload());
+  pushBtn.addEventListener('click', pushHorde);
+
+  function fmtTime(s){
+    s = Math.floor(s);
+    const m = Math.floor(s/60), sec = s%60;
+    return m+':'+String(sec).padStart(2,'0');
+  }
+
+  // ---------- geolocation ----------
+  function startGame(){
+    if(!navigator.geolocation){
+      errEl.hidden = false;
+      errEl.textContent = 'الجهاز ما يدعم تحديد الموقع.';
+      return;
+    }
+    errEl.hidden = true;
+    navigator.geolocation.getCurrentPosition(onFirstFix, onGeoError, {enableHighAccuracy:true, timeout:15000});
+  }
+
+  function onGeoError(e){
+    errEl.hidden = false;
+    errEl.textContent = 'ما قدرت أوصل لموقعك. تأكد إنك فاتح صلاحية الموقع للمتصفح وحاول ثانية.';
+  }
+
+  function onFirstFix(pos){
+    S.lat0 = pos.coords.latitude;
+    S.lon0 = pos.coords.longitude;
+    S.px = 0; S.py = 0;
+    S.path = [{x:0,y:0,t:0}];
+    startScreen.hidden = true;
+    hud.hidden = false;
+    ammoPill.hidden = false;
+
+    S.watchId = navigator.geolocation.watchPosition(onPos, ()=>{}, {enableHighAccuracy:true, maximumAge:1000, timeout:5000});
+
+    S.startTime = performance.now();
+    S.lastMoveTime = S.startTime;
+    S.running = true;
+    requestAnimationFrame(loop);
+  }
+
+  function onPos(pos){
+    if(!S.running) return;
+    const {x,y} = toMeters(pos.coords.latitude, pos.coords.longitude, S.lat0, S.lon0);
+    const dx = x - S.px, dy = y - S.py;
+    const d = Math.hypot(dx,dy);
+    if(d > 0.4){ // ignore GPS jitter under ~40cm
+      if(d < 40){ // ignore obvious teleport glitches
+        S.distance += d;
+        S.energy = Math.min(100, S.energy + d/2); // 200m fills the bar
+        if(d > 0.05) S.heading = Math.atan2(dx,-dy);
+      }
+      S.px = x; S.py = y;
+      S.path.push({x:S.px, y:S.py, t:(performance.now()-S.startTime)/1000});
+      if(S.path.length > 4000) S.path.shift();
+      maybeDropPickup();
+    }
+  }
+
+  // ---------- pickups along the path ----------
+  function maybeDropPickup(){
+    if(S.distance - S.lastSpawnDistMark < 35) return;
+    S.lastSpawnDistMark = S.distance;
+    const ang = Math.random()*Math.PI*2;
+    const off = 4 + Math.random()*6;
+    const type = Math.random() < 0.7 ? 'ammo' : 'hourglass';
+    S.pickups.push({
+      x: S.px + Math.cos(ang)*off,
+      y: S.py + Math.sin(ang)*off,
+      type
+    });
+  }
+
+  // ---------- zombies ----------
+  function trySpawnHorde(){
+    if(S.spawned) return;
+    const elapsed = (performance.now()-S.startTime)/1000;
+    if(elapsed < S.grace) return;
+    S.spawned = true;
+    const start = S.path[0];
+    const count = 5;
+    for(let i=0;i<count;i++){
+      const ang = Math.random()*Math.PI*2;
+      const r = Math.random()*4;
+      S.zombies.push({
+        x: start.x + Math.cos(ang)*r,
+        y: start.y + Math.sin(ang)*r,
+        alive:true
+      });
+    }
+  }
+
+  function updateZombies(dt){
+    if(!S.spawned) return;
+    let speed = S.zombieSpeed;
+    if(performance.now() < S.zombieSlowUntil) speed *= 0.45;
+    for(const z of S.zombies){
+      if(!z.alive) continue;
+      const dx = S.px - z.x, dy = S.py - z.y;
+      const d = Math.hypot(dx,dy) || 1;
+      z.x += (dx/d) * speed * dt;
+      z.y += (dy/d) * speed * dt;
+      if(d < 3){ gameOver('caught'); }
+    }
+  }
+
+  function pushHorde(){
+    if(!S.energyReady) return;
+    S.energyReady = false;
+    S.energy = 0;
+    pushBtn.classList.remove('ready');
+    for(const z of S.zombies){
+      const dx = z.x - S.px, dy = z.y - S.py;
+      const d = Math.hypot(dx,dy) || 1;
+      z.x += (dx/d) * 55;
+      z.y += (dy/d) * 55;
+    }
+  }
+
+  // ---------- input: throw at zombies / collect pickups ----------
+  canvas.addEventListener('pointerdown', (e)=>{
+    if(!S.running) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = (e.clientX - rect.left) * DPR;
+    const sy = (e.clientY - rect.top) * DPR;
+    // convert screen -> world
+    const scale = pxPerMeter();
+    const cx = W/2, cy = H/2;
+    const wx = S.px + (sx-cx)/scale;
+    const wy = S.py + (sy-cy)/scale;
+
+    let best=null, bestD=Infinity;
+    for(const z of S.zombies){
+      if(!z.alive) continue;
+      const d = Math.hypot(z.x-wx, z.y-wy);
+      if(d<bestD){bestD=d; best=z;}
+    }
+    const hitRadius = 22/scale; // generous tap target
+    if(best && bestD < hitRadius){
+      if(S.ammo > 0){
+        S.ammo--; best.alive=false; S.kills++;
+      }
+    }
+  });
+
+  // ---------- pickup collection ----------
+  function updatePickups(){
+    for(let i=S.pickups.length-1;i>=0;i--){
+      const p = S.pickups[i];
+      const d = Math.hypot(p.x-S.px, p.y-S.py);
+      if(d < 5){
+        if(p.type==='ammo') S.ammo += 2;
+        else { S.zombieSlowUntil = performance.now() + 10000; }
+        S.pickups.splice(i,1);
+      }
+    }
+  }
+
+  // ---------- render ----------
+  function drawWorld(){
+    ctx.fillStyle = '#0b0f0a';
+    ctx.fillRect(0,0,W,H);
+
+    const scale = pxPerMeter();
+    const cx = W/2, cy = H/2;
+
+    // grid, parallax-ish, anchored to world coords
+    ctx.strokeStyle = 'rgba(124,143,79,0.10)';
+    ctx.lineWidth = 1;
+    const grid = 20; // meters
+    const originPxX = cx - (S.px % grid) * scale;
+    const originPxY = cy - (S.py % grid) * scale;
+    for(let gx = originPxX % (grid*scale) - grid*scale; gx < W; gx += grid*scale){
+      ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke();
+    }
+    for(let gy = originPxY % (grid*scale) - grid*scale; gy < H; gy += grid*scale){
+      ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
+    }
+
+    // path trail
+    if(S.path.length>1){
+      ctx.strokeStyle = 'rgba(232,228,216,0.18)';
+      ctx.lineWidth = 3*DPR;
+      ctx.beginPath();
+      for(let i=0;i<S.path.length;i++){
+        const p = S.path[i];
+        const sx = cx + (p.x-S.px)*scale;
+        const sy = cy + (p.y-S.py)*scale;
+        if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);
+      }
+      ctx.stroke();
+    }
+
+    // pickups
+    for(const p of S.pickups){
+      const sx = cx + (p.x-S.px)*scale;
+      const sy = cy + (p.y-S.py)*scale;
+      if(sx<-40||sx>W+40||sy<-40||sy>H+40) continue;
+      ctx.font = (22*DPR)+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(p.type==='ammo' ? '📦' : '⏳', sx, sy);
+    }
+
+    // zombies
+    for(const z of S.zombies){
+      if(!z.alive) continue;
+      const sx = cx + (z.x-S.px)*scale;
+      const sy = cy + (z.y-S.py)*scale;
+      ctx.font = (26*DPR)+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('💀', sx, sy);
+    }
+
+    // player
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(S.heading);
+    ctx.fillStyle = '#e8e4d8';
+    ctx.beginPath();
+    ctx.moveTo(0,-10*DPR);
+    ctx.lineTo(7*DPR,9*DPR);
+    ctx.lineTo(-7*DPR,9*DPR);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function updateHUD(){
+    energyBar.style.width = S.energy+'%';
+    const speedPct = Math.min(100, (S.zombieSpeed / 2.2)*100 * (performance.now()<S.zombieSlowUntil?0.45:1));
+    speedBar.style.width = speedPct+'%';
+    distStat.textContent = Math.round(S.distance);
+    timeStat.textContent = fmtTime((performance.now()-S.startTime)/1000);
+    killStat.textContent = S.kills;
+    ammoCount.textContent = S.ammo;
+    if(S.energy>=100 && !S.energyReady){ S.energyReady = true; pushBtn.classList.add('ready'); }
+  }
+
+  let lastT = performance.now();
+  function loop(now){
+    if(!S.running) return;
+    const dt = Math.min(0.1,(now-lastT)/1000);
+    lastT = now;
+    trySpawnHorde();
+    updateZombies(dt);
+    updatePickups();
+    drawWorld();
+    updateHUD();
+    requestAnimationFrame(loop);
+  }
+
+  function gameOver(reason){
+    S.running = false;
+    if(S.watchId!=null) navigator.geolocation.clearWatch(S.watchId);
+    const best = Math.max(S.best, S.distance);
+    localStorage.setItem('zr_best', String(best));
+    document.getElementById('finalTime').textContent = fmtTime((performance.now()-S.startTime)/1000);
+    document.getElementById('finalDist').textContent = Math.round(S.distance);
+    document.getElementById('finalKills').textContent = S.kills;
+    document.getElementById('bestDist').textContent = Math.round(best);
+    overScreen.hidden = false;
+  }
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(()=>{});
+    });
+  }
+})();
+</script>
+</body>
+</html>
